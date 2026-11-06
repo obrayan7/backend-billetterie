@@ -1,0 +1,235 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+  CONTROLLER
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentProvider {
+  STRIPE
+  CRYPTO
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  PROOF_SUBMITTED
+  REJECTED
+  PAID
+  FAILED
+  EXPIRED
+}
+
+enum TicketStatus {
+  VALID
+  USED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String?
+  name      String?
+  role      Role     @default(CUSTOMER)
+  orders    Order[]
+  resets    PasswordResetToken[]
+  createdAt DateTime @default(now())
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model Venue {
+  id      String  @id @default(cuid())
+  name    String
+  address String
+  city    String
+  country String  @default("FR")
+  lat     Float?
+  lng     Float?
+  events  Event[]
+}
+
+model Category {
+  id     String  @id @default(cuid())
+  name   String  @unique
+  slug   String  @unique
+  events Event[]
+}
+
+model Event {
+  id          String       @id @default(cuid())
+  title       String
+  slug        String       @unique
+  description String
+  startsAt    DateTime
+  status      EventStatus  @default(DRAFT)
+  /// Organisateur affiché sur les billets (« Organisé par … »)
+  organizer   String?
+  venue       Venue        @relation(fields: [venueId], references: [id])
+  venueId     String
+  category    Category     @relation(fields: [categoryId], references: [id])
+  categoryId  String
+  images      EventImage[]
+  ticketTypes TicketType[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([status, startsAt])
+}
+
+model EventImage {
+  id       String  @id @default(cuid())
+  event    Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId  String
+  url      String
+  alt      String?
+  position Int     @default(0)
+  isCover  Boolean @default(false)
+
+  @@index([eventId])
+}
+
+model TicketType {
+  id          String      @id @default(cuid())
+  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId     String
+  name        String
+  description String?
+  priceCents  Int
+  quantity    Int
+  maxPerOrder Int         @default(8)
+  /// Si renseigné (ex. « A »), les sièges sont numérotés automatiquement A1, A2… ; sinon « Placement libre »
+  seatPrefix  String?
+  items       OrderItem[]
+
+  @@index([eventId])
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  /// Jeton secret : permet à un acheteur invité d'accéder à sa commande (lien envoyé par e-mail)
+  accessToken   String      @unique @default(cuid())
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId        String?
+  email         String?
+  /// Nom du titulaire imprimé sur les billets
+  holderName    String?
+  status        OrderStatus @default(PENDING)
+  totalCents    Int         @default(0)
+  expiresAt     DateTime
+  paidAt        DateTime?
+  cgvAcceptedAt DateTime?
+  items         OrderItem[]
+  payments      Payment[]
+  createdAt     DateTime    @default(now())
+
+  @@index([status, expiresAt])
+  @@index([userId])
+}
+
+model OrderItem {
+  id           String     @id @default(cuid())
+  order        Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId      String
+  ticketType   TicketType @relation(fields: [ticketTypeId], references: [id])
+  ticketTypeId String
+  quantity     Int
+  unitCents    Int
+  tickets      Ticket[]
+
+  @@unique([orderId, ticketTypeId])
+  @@index([ticketTypeId])
+}
+
+model Ticket {
+  id          String       @id @default(cuid())
+  orderItem   OrderItem    @relation(fields: [orderItemId], references: [id])
+  orderItemId String
+  code        String       @unique
+  /// Numéro séquentiel global : sert à fabriquer le numéro de billet lisible (EV20261206 + 0045)
+  serial      Int          @unique @default(autoincrement())
+  seat        String?
+  status      TicketStatus @default(VALID)
+  usedAt      DateTime?
+}
+
+model Payment {
+  id          String          @id @default(cuid())
+  order       Order           @relation(fields: [orderId], references: [id])
+  orderId     String
+  provider    PaymentProvider
+  externalId  String
+  status      PaymentStatus   @default(PENDING)
+  amountCents Int
+  checkoutUrl String?
+  proofs          PaymentProof[]
+  /// Virement : vérification par l’administrateur
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  rejectionReason String?
+  createdAt   DateTime        @default(now())
+
+  @@unique([provider, externalId])
+  @@index([orderId])
+}
+
+/// Coordonnées bancaires affichées aux clients qui paient par virement (gérées dans l’admin)
+model BankAccount {
+  id            String   @id @default(cuid())
+  label         String
+  bankName      String
+  accountHolder String
+  /// IBAN (validé) ou numéro de compte national
+  accountNumber String
+  bic           String?
+  /// Consignes affichées au client (ex. « indiquez la référence en libellé »)
+  instructions  String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// Preuve de virement envoyée par le client. Stockée en base (jamais dans un stockage public) : données personnelles.
+model PaymentProof {
+  id        String   @id @default(cuid())
+  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  paymentId String
+  filename  String
+  mimeType  String
+  size      Int
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  @@index([paymentId])
+}

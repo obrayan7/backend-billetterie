@@ -1,0 +1,13 @@
+# HTTPS automatique (Let's Encrypt). DOMAIN = votre nom de domaine (ex. monsite.fr)
+{$DOMAIN} {
+	encode gzip
+	# API interne (confirmation des virements) : réservée à l'admin, via le réseau Docker
+	@internal path /api/internal/*
+	respond @internal 404
+	reverse_proxy web:3000
+}
+
+admin.{$DOMAIN} {
+	encode gzip
+	reverse_proxy admin:3001
+}

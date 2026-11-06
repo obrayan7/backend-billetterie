@@ -1,0 +1,21 @@
+{
+  "name": "rideau",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "dotenv -e .env -- npm run dev -w @rideau/web",
+    "dev:admin": "dotenv -e .env -- npm run dev -w @rideau/admin",
+    "db:push": "dotenv -e .env -- npm run db:push -w @rideau/db",
+    "db:seed": "dotenv -e .env -- npm run db:seed -w @rideau/db",
+    "typecheck": "npm run typecheck -ws --if-present",
+    "db:migrate": "dotenv -e .env -- npm run db:migrate -w @rideau/db --",
+    "db:deploy": "dotenv -e .env -- npm run db:deploy -w @rideau/db"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^7.4.2",
+    "typescript": "^5.5.4"
+  }
+}

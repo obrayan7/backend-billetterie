@@ -1,0 +1,7 @@
+node_modules
+.next
+.env
+*.log
+apps/web/public/uploads/*
+!apps/web/public/uploads/.gitkeep
+apps/web/exemple-billets.pdf
